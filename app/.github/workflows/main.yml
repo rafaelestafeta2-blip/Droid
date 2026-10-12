@@ -26,6 +26,9 @@ jobs:
         if [ -f .env.example ]; then
           cp .env.example .env
         fi
+        if [ ! -f app/google-services.json ]; then
+          echo '{"project_info": {"project_number": "123456789012", "project_id": "placeholder-project", "storage_bucket": "placeholder-project.appspot.com"}, "client": [{"client_info": {"mobilesdk_app_id": "1:123456789012:android:1234567890abcdef", "android_client_info": {"package_name": "com.example"}}, "api_key": [{"current_key": "AIzaSyD-1234567890abcdef1234567890abcdef"}]}]}' > app/google-services.json
+        fi
 
     - name: Make gradlew executable
       run: chmod +x ./gradlew
