@@ -56,19 +56,17 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   init {
     viewModelScope.launch {
       val tree = fileManager.loadProjectTree()
-      val initialFile = FileTreeUtils.findFirstFile(tree)
       val initialProject = fileManager.getWorkspaceProjectItem()
       _uiState.update {
         it.copy(
           rootNode = tree,
-          activeFile = initialFile,
-          editorContent = initialFile?.content ?: "",
-          openTabs = listOfNotNull(initialFile),
+          activeFile = null,
+          editorContent = "",
+          openTabs = emptyList(),
           projectsList = listOf(initialProject)
         )
       }
       addLog("Sistema montado em context.filesDir/project_workspace", LogType.SUCCESS)
-      schedulePreviewParsing(initialFile?.name ?: "MainActivity.kt", initialFile?.content ?: "")
     }
   }
 
@@ -415,31 +413,28 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   fun openProject(project: ProjectItem) {
     viewModelScope.launch {
       val tree = fileManager.loadProjectTree()
-      val firstFile = FileTreeUtils.findFirstFile(tree)
       _uiState.update {
         it.copy(
           rootNode = tree,
-          activeFile = firstFile,
-          editorContent = firstFile?.content ?: "",
-          openTabs = listOfNotNull(firstFile),
+          activeFile = null,
+          editorContent = "",
+          openTabs = emptyList(),
           currentScreen = IdeScreen.EDITOR
         )
       }
-      schedulePreviewParsing(firstFile?.name ?: "MainActivity.kt", firstFile?.content ?: "")
     }
   }
 
   fun resetProjectToTemplate() {
     viewModelScope.launch {
       val tree = fileManager.resetToRobustTemplate()
-      val initialFile = FileTreeUtils.findFirstFile(tree)
       val currentProject = fileManager.getWorkspaceProjectItem()
       _uiState.update {
         it.copy(
           rootNode = tree,
-          activeFile = initialFile,
-          editorContent = initialFile?.content ?: "",
-          openTabs = listOfNotNull(initialFile),
+          activeFile = null,
+          editorContent = "",
+          openTabs = emptyList(),
           isDirty = false,
           hasSyntaxErrors = false,
           projectsList = listOf(currentProject),
@@ -447,7 +442,6 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
         )
       }
       addLog("[TEMPLATE] Novo projeto inicializado com template robusto (Compose, Retrofit, Room, Coil, Permissões)!", LogType.SUCCESS)
-      schedulePreviewParsing(initialFile?.name ?: "MainActivity.kt", initialFile?.content ?: "")
     }
   }
 

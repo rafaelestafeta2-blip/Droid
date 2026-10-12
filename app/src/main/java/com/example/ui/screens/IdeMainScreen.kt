@@ -46,6 +46,7 @@ import com.example.ui.components.dialogs.AiFixDialog
 import com.example.ui.components.dialogs.CloneRepositoryDialog
 import com.example.ui.components.dialogs.GitHubPushDialog
 import com.example.ui.components.dialogs.CreateItemDialog
+import com.example.ui.components.dialogs.SupabaseConfigDialog
 import com.example.ui.screens.projects.ProjectsScreen
 import com.example.ui.components.editor.BuildStatusBadge
 import com.example.ui.components.editor.CodeEditorArea
@@ -315,6 +316,15 @@ fun IdeMainScreen(
       onDismiss = { viewModel.setShowCreateItemDialog(false) },
       onCreateFile = { name, path -> viewModel.createFile(name, path) },
       onCreateFolder = { name, path -> viewModel.createFolder(name, path) }
+    )
+  }
+
+  if (uiState.showSupabaseDialog) {
+    SupabaseConfigDialog(
+      initialConfig = uiState.supabaseConfig,
+      onSaveConfig = { token, ref -> viewModel.saveSupabaseConfig(token, ref) },
+      onTestConnection = { _, _ -> viewModel.testSupabaseConnection() },
+      onDismiss = { viewModel.showSupabaseDialog(false) }
     )
   }
 }
