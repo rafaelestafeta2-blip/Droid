@@ -68,6 +68,15 @@ class ProjectFileManager(private val context: Context) {
     saveFile(targetPath, content)
   }
 
+  suspend fun createDirectory(rawPath: String): Boolean = withContext(Dispatchers.IO) {
+    try {
+      File(resolvePath(rawPath)).mkdirs()
+    } catch (e: Exception) {
+      e.printStackTrace()
+      false
+    }
+  }
+
   suspend fun saveFile(path: String, content: String): Boolean = withContext(Dispatchers.IO) {
     try {
       val file = File(path)

@@ -64,5 +64,9 @@ data class IdeUiState(
   val supabaseConfig: SupabaseConfig = SupabaseConfig(),
   val showSupabaseDialog: Boolean = false,
   val activeRlsDiagnostic: SupabaseRlsDiagnostic? = null,
-  val isApplyingSupabaseAction: Boolean = false
+  val isApplyingSupabaseAction: Boolean = false,
+  val isAiChatVisible: Boolean = false,
+  val selectedAiModel: String = "gemini-3.5-flash",
+  val showCreateItemDialog: Boolean = false,
+  val activeParentPath: String = ""
 )

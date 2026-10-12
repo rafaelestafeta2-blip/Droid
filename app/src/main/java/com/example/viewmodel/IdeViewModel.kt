@@ -270,12 +270,22 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
 
   fun toggleLivePreview() {
     val willShow = !_uiState.value.previewState.isVisible
-    _uiState.update {
-      it.copy(previewState = it.previewState.copy(isVisible = willShow))
-    }
+    _uiState.update { it.copy(previewState = it.previewState.copy(isVisible = willShow)) }
     if (willShow) {
-      val active = _uiState.value.activeFile
-      schedulePreviewParsing(active?.name ?: "MainActivity.kt", _uiState.value.editorContent)
+      viewModelScope.launch {
+        val rootNode = _uiState.value.rootNode
+        val mainActivity = FileTreeUtils.findFileByName(rootNode, "MainActivity.kt")
+        
+        val fileToPreview = mainActivity ?: _uiState.value.activeFile
+        
+        val content = if (fileToPreview == _uiState.value.activeFile) {
+          _uiState.value.editorContent
+        } else {
+          fileToPreview?.let { fileManager.readFile(it.path) } ?: ""
+        }
+        
+        schedulePreviewParsing(fileToPreview?.name ?: "MainActivity.kt", content)
+      }
     }
   }
 
@@ -529,6 +539,38 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun clearLogs() { _uiState.update { it.copy(logs = emptyList()) } }
+
+  fun toggleAiChat() {
+    _uiState.update { it.copy(isAiChatVisible = !it.isAiChatVisible) }
+  }
+
+  fun setAiModel(model: String) {
+    _uiState.update { it.copy(selectedAiModel = model) }
+  }
+
+  fun createFile(name: String, parentPath: String) {
+      viewModelScope.launch(Dispatchers.IO) {
+          val path = if (parentPath.isEmpty()) name else "$parentPath/$name"
+          fileManager.createOrUpdateFile(path, "")
+          val tree = fileManager.loadProjectTree()
+          _uiState.update { it.copy(rootNode = tree) }
+          addLog("[SUCCESS] Arquivo criado: $path", LogType.SUCCESS)
+      }
+  }
+
+  fun createFolder(name: String, parentPath: String) {
+      viewModelScope.launch(Dispatchers.IO) {
+          val path = if (parentPath.isEmpty()) name else "$parentPath/$name"
+          fileManager.createDirectory(path)
+          val tree = fileManager.loadProjectTree()
+          _uiState.update { it.copy(rootNode = tree) }
+          addLog("[SUCCESS] Pasta criada: $path", LogType.SUCCESS)
+      }
+  }
+
+  fun setShowCreateItemDialog(show: Boolean, parentPath: String = "") {
+    _uiState.update { it.copy(showCreateItemDialog = show, activeParentPath = parentPath) }
+  }
 
   private fun addLog(message: String, type: LogType) {
     _uiState.update { it.copy(logs = it.logs + LogEntry(message = message, type = type)) }

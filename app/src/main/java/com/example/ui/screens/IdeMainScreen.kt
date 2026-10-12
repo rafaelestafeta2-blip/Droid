@@ -45,12 +45,14 @@ import com.example.model.IdeScreen
 import com.example.ui.components.dialogs.AiFixDialog
 import com.example.ui.components.dialogs.CloneRepositoryDialog
 import com.example.ui.components.dialogs.GitHubPushDialog
+import com.example.ui.components.dialogs.CreateItemDialog
 import com.example.ui.screens.projects.ProjectsScreen
 import com.example.ui.components.editor.BuildStatusBadge
 import com.example.ui.components.editor.CodeEditorArea
 import com.example.ui.components.editor.EditorAccessoryBar
 import com.example.ui.components.editor.EditorHeader
 import com.example.ui.components.preview.FloatingPreviewPanel
+import com.example.ui.components.chat.AiChatPanel
 import com.example.ui.components.sidebar.ProjectSidebarDrawer
 import com.example.ui.components.terminal.TerminalPanel
 import com.example.ui.theme.IdeBackground
@@ -117,7 +119,17 @@ fun IdeMainScreen(
             onOpenDashboard = {
               viewModel.navigateToScreen(IdeScreen.DASHBOARD)
               scope.launch { drawerState.close() }
-            }
+            },
+            onOpenSupabaseSettings = {
+              viewModel.showSupabaseDialog(true)
+              scope.launch { drawerState.close() }
+            },
+            onCreateNewItem = {
+              viewModel.setShowCreateItemDialog(true)
+              scope.launch { drawerState.close() }
+            },
+            selectedAiModel = uiState.selectedAiModel,
+            onModelSelect = { viewModel.setAiModel(it) }
           )
         }
       }
@@ -192,7 +204,8 @@ fun IdeMainScreen(
           onCloseTab = { viewModel.closeTab(it) },
           onRunBuild = { viewModel.runBuild() },
           onTogglePreview = { viewModel.toggleLivePreview() },
-          onGitHubPush = { viewModel.showGitHubDialog(true) }
+          onGitHubPush = { viewModel.showGitHubDialog(true) },
+          viewModel = viewModel
         )
 
         // Main Code Editor Area com Live Preview Flutuante Overlay
@@ -212,6 +225,19 @@ fun IdeMainScreen(
             onToggleOpacity = { viewModel.togglePreviewOpacity() },
             onClose = { viewModel.closeLivePreview() }
           )
+
+          // AI Chat Panel Overlay
+          if (uiState.isAiChatVisible) {
+            Box(
+                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
+                contentAlignment = Alignment.Center
+            ) {
+                AiChatPanel(
+                    onClose = { viewModel.toggleAiChat() },
+                    onSendPrompt = { prompt -> viewModel.requestAiPrompt(prompt) }
+                )
+            }
+          }
         }
 
         // Typing accessory bar (shortcuts for code symbols)
@@ -280,6 +306,15 @@ fun IdeMainScreen(
         viewModel.cloneGitHubRepository(url, token, branch)
       },
       onDismiss = { viewModel.showCloneDialog(false) }
+    )
+  }
+
+  if (uiState.showCreateItemDialog) {
+    CreateItemDialog(
+      parentPath = uiState.activeParentPath,
+      onDismiss = { viewModel.setShowCreateItemDialog(false) },
+      onCreateFile = { name, path -> viewModel.createFile(name, path) },
+      onCreateFolder = { name, path -> viewModel.createFolder(name, path) }
     )
   }
 }

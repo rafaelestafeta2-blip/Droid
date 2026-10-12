@@ -28,7 +28,8 @@ class GeminiAiService {
   suspend fun analyzeAndFix(
     fileName: String,
     currentCode: String,
-    errorLogs: String
+    errorLogs: String,
+    modelName: String = "gemini-3.5-flash"
   ): AiFixSuggestion = withContext(Dispatchers.IO) {
     // Verificação de Auto-Diagnostic de RLS se o erro tiver padrão de permissão
     val rlsDiag = RlsDiagnosticEngine.diagnose(errorLogs)
@@ -37,7 +38,7 @@ class GeminiAiService {
     }
 
     val prompt = GeminiPromptBuilder.buildCompilationFixPrompt(fileName, currentCode, errorLogs)
-    callGeminiApi(prompt, fileName, currentCode, userQuery = "")
+    callGeminiApi(prompt, fileName, currentCode, userQuery = "", modelName = modelName)
   }
 
   suspend fun generateFromCustomPrompt(
@@ -45,7 +46,8 @@ class GeminiAiService {
     currentCode: String,
     globalProjectIndex: String,
     userPrompt: String,
-    hasSupabaseConfig: Boolean = false
+    hasSupabaseConfig: Boolean = false,
+    modelName: String = "gemini-3.5-flash"
   ): AiFixSuggestion = withContext(Dispatchers.IO) {
     val prompt = GeminiPromptBuilder.buildCustomPrompt(
       userPrompt = userPrompt,
@@ -54,7 +56,7 @@ class GeminiAiService {
       currentCode = currentCode,
       hasSupabaseConfig = hasSupabaseConfig
     )
-    callGeminiApi(prompt, fileName, currentCode, userQuery = userPrompt)
+    callGeminiApi(prompt, fileName, currentCode, userQuery = userPrompt, modelName = modelName)
   }
 
   /**
@@ -91,7 +93,8 @@ class GeminiAiService {
     prompt: String,
     fileName: String,
     fallbackCode: String,
-    userQuery: String
+    userQuery: String,
+    modelName: String
   ): AiFixSuggestion {
     val apiKey = BuildConfig.GEMINI_API_KEY
     if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
@@ -99,7 +102,7 @@ class GeminiAiService {
     }
 
     try {
-      val url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=$apiKey"
+      val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
       val body = JSONObject().apply {
         put("contents", JSONArray().apply {
           put(JSONObject().apply {

@@ -1,6 +1,7 @@
 package com.example.ui.components.sidebar
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -15,10 +16,15 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CreateNewFolder
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -57,7 +63,11 @@ fun ProjectSidebarDrawer(
   onToggleFolder: (String) -> Unit,
   onResetTemplate: (() -> Unit)? = null,
   onCloneGitHub: (() -> Unit)? = null,
+  onOpenSupabaseSettings: (() -> Unit)? = null,
   onOpenDashboard: (() -> Unit)? = null,
+  onCreateNewItem: (() -> Unit)? = null,
+  selectedAiModel: String = "gemini-3.5-flash",
+  onModelSelect: (String) -> Unit = {},
   modifier: Modifier = Modifier
 ) {
   var searchQuery by remember { mutableStateOf("") }
@@ -94,6 +104,22 @@ fun ProjectSidebarDrawer(
           )
         )
         Spacer(modifier = Modifier.weight(1f))
+        
+        // New File/Folder Button
+        if (onCreateNewItem != null) {
+          IconButton(
+            onClick = onCreateNewItem,
+            modifier = Modifier.size(28.dp).testTag("create_new_item_button")
+          ) {
+            Icon(
+              imageVector = Icons.Default.Add,
+              contentDescription = "Criar Arquivo ou Pasta",
+              tint = IdeCyan,
+              modifier = Modifier.size(18.dp)
+            )
+          }
+        }
+
         if (onCloneGitHub != null) {
           IconButton(
             onClick = onCloneGitHub,
@@ -133,6 +159,21 @@ fun ProjectSidebarDrawer(
             )
           }
         }
+        
+        // Supabase Settings Button
+        if (onOpenSupabaseSettings != null) {
+            IconButton(
+                onClick = onOpenSupabaseSettings,
+                modifier = Modifier.size(28.dp).testTag("supabase_settings_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Cloud,
+                    contentDescription = "Configurações Supabase",
+                    tint = IdePurple,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
       }
 
       HorizontalDivider(color = IdeBorder, thickness = 1.dp)
@@ -160,6 +201,38 @@ fun ProjectSidebarDrawer(
         singleLine = true
       )
 
+      HorizontalDivider(color = IdeBorder, thickness = 1.dp)
+
+      // AI Model Selector
+      var expanded by remember { mutableStateOf(false) }
+      val models = listOf("gemini-3.5-flash", "gemini-1.5-pro", "gemini-1.5-flash")
+
+      Box(modifier = Modifier.fillMaxWidth().padding(10.dp)) {
+          Row(
+              modifier = Modifier.fillMaxWidth().clickable { expanded = true },
+              verticalAlignment = Alignment.CenterVertically
+          ) {
+              Icon(Icons.Default.SmartToy, contentDescription = "Modelo IA", tint = IdePurple, modifier = Modifier.size(16.dp))
+              Spacer(modifier = Modifier.width(8.dp))
+              Text("Modelo: $selectedAiModel", color = IdeTextPrimary, fontSize = 12.sp)
+          }
+          DropdownMenu(
+              expanded = expanded,
+              onDismissRequest = { expanded = false },
+              modifier = Modifier.background(IdeSurface)
+          ) {
+              models.forEach { model ->
+                  DropdownMenuItem(
+                      text = { Text(model, color = IdeTextPrimary) },
+                      onClick = {
+                          onModelSelect(model)
+                          expanded = false
+                      }
+                  )
+              }
+          }
+      }
+      
       HorizontalDivider(color = IdeBorder, thickness = 1.dp)
 
       // File Tree List

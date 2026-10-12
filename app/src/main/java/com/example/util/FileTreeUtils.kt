@@ -17,6 +17,15 @@ object FileTreeUtils {
     return null
   }
 
+  fun findFileByName(node: FileNode, name: String): FileNode? {
+    if (!node.isDirectory && node.name == name) return node
+    for (child in node.children) {
+      val found = findFileByName(child, name)
+      if (found != null) return found
+    }
+    return null
+  }
+
   fun buildProjectTreeSummary(node: FileNode, indent: String = ""): String {
     val builder = StringBuilder()
     val prefix = if (node.isDirectory) "$indent📁 ${node.name}/\n" else "$indent📄 ${node.name}\n"

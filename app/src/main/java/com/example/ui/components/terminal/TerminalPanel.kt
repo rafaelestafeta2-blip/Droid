@@ -190,7 +190,11 @@ fun TerminalPanel(
         } else {
           LazyColumn(state = listState, modifier = Modifier.fillMaxWidth()) {
             items(logs, key = { it.id }) { log ->
-              Row(modifier = Modifier.fillMaxWidth().padding(vertical = 1.dp)) {
+              Row(modifier = Modifier
+                  .fillMaxWidth()
+                  .padding(vertical = 1.dp)
+                  .clickable { if (log.type == LogType.ERROR) onAiFixClick() }
+              ) {
                 Text("[${log.timestamp}] ", color = IdeTextMuted, fontFamily = FontFamily.Monospace, fontSize = 11.sp)
                 Text(
                   text = log.message,
