@@ -90,35 +90,6 @@ object GeminiResponseParser {
   }
 
   fun fallbackSuggestion(fileName: String, code: String, query: String): AiFixSuggestion {
-    val isCloud = GeminiPromptBuilder.isCloudPersistenceRequested(query)
-    val cloudActions = if (isCloud) {
-      listOf(
-        SupabaseToolAction(
-          type = "SQL_MIGRATION",
-          sql = "CREATE TABLE IF NOT EXISTS public.items (id uuid primary key default gen_random_uuid(), title text not null, created_at timestamptz default now()); ALTER TABLE public.items ENABLE ROW LEVEL SECURITY; CREATE POLICY \"Acesso livre\" ON public.items FOR ALL TO authenticated, anon USING (true) WITH CHECK (true);",
-          description = "Criação de tabela 'items' e política permissiva de RLS",
-          tableName = "items"
-        )
-      )
-    } else emptyList()
-
-    val changes = listOf(
-      AiFileChange(
-        filePath = fileName,
-        action = FileChangeAction.MODIFY,
-        explanation = "Integração segura no arquivo ativo com suporte a Safe Area e Supabase",
-        fullContent = code.replace("GreetingView(user = \"Android Developer\")", "GreetingView(user = \"Android Developer // $query\")") +
-          if (isCloud) "\n// [Supabase]: Integração com PostgREST e RLS ativa no projeto\n" else "",
-        originalContent = code
-      )
-    )
-
-    return AiFixSuggestion(
-      issueTitle = if (query.isNotBlank()) "Implementação: $query" else "Correção Automática",
-      explanation = if (isCloud) "Código gerado com persistência em nuvem e políticas de RLS no Supabase." else "Código atualizado com Safe Area.",
-      fullFixedContent = changes[0].fullContent,
-      changes = changes,
-      supabaseActions = cloudActions
-    )
+    return AiSmartGenerator.generateSuggestionForPrompt(fileName, code, query)
   }
 }

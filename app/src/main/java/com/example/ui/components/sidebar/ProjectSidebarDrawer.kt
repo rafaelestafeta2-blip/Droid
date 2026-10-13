@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountTree
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.CreateNewFolder
@@ -66,6 +67,7 @@ fun ProjectSidebarDrawer(
   onOpenSupabaseSettings: (() -> Unit)? = null,
   onOpenDashboard: (() -> Unit)? = null,
   onCreateNewItem: (() -> Unit)? = null,
+  onOpenAiChat: (() -> Unit)? = null,
   selectedAiModel: String = "gemini-3.5-flash",
   onModelSelect: (String) -> Unit = {},
   modifier: Modifier = Modifier
@@ -174,6 +176,21 @@ fun ProjectSidebarDrawer(
                 )
             }
         }
+
+        // AI Chat / TA Assistant button
+        if (onOpenAiChat != null) {
+            IconButton(
+                onClick = onOpenAiChat,
+                modifier = Modifier.size(28.dp).testTag("sidebar_open_ai_chat_button")
+            ) {
+                Icon(
+                    imageVector = Icons.Default.AutoAwesome,
+                    contentDescription = "Assistente IA (TA)",
+                    tint = IdeCyan,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+        }
       }
 
       HorizontalDivider(color = IdeBorder, thickness = 1.dp)
@@ -231,6 +248,27 @@ fun ProjectSidebarDrawer(
                   )
               }
           }
+      }
+
+      if (onOpenAiChat != null) {
+        Surface(
+          modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 10.dp, vertical = 2.dp)
+            .clickable { onOpenAiChat() }
+            .testTag("sidebar_ai_chat_banner"),
+          shape = RoundedCornerShape(8.dp),
+          color = IdePurple.copy(alpha = 0.15f)
+        ) {
+          Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = IdePurple, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(8.dp))
+            Text("Assistente IA (TA / Chat)", color = IdeTextPrimary, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+          }
+        }
       }
       
       HorizontalDivider(color = IdeBorder, thickness = 1.dp)

@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Smartphone
@@ -35,6 +36,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.model.BuildStatus
@@ -59,6 +61,7 @@ fun EditorHeader(
   onCloseTab: (FileNode) -> Unit,
   onRunBuild: () -> Unit,
   onTogglePreview: () -> Unit = {},
+  onToggleAiChat: () -> Unit = {},
   onGitHubPush: () -> Unit,
   viewModel: IdeViewModel = viewModel(),
   modifier: Modifier = Modifier
@@ -133,17 +136,7 @@ fun EditorHeader(
 
     Spacer(modifier = Modifier.width(4.dp))
 
-    // Chat AI Button
-    IconButton(
-      onClick = { viewModel.toggleAiChat() }, // Implemented: Toggle AI Chat panel
-      modifier = Modifier
-        .size(34.dp)
-        .testTag("chat_ai_button")
-    ) {
-      Icon(Icons.Default.Chat, contentDescription = "Chat com IA", tint = IdePurple, modifier = Modifier.size(18.dp))
-    }
-    
-    Spacer(modifier = Modifier.width(4.dp))
+
 
     // GitHub Push button
     IconButton(

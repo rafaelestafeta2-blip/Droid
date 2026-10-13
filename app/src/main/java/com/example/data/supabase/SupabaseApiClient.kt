@@ -14,40 +14,55 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
- * Cliente HTTP para a Supabase Management API (https://api.supabase.com/v1).
- * Responsabilidade única: Execução de chamadas REST e consultas SQL remotas.
+ * Cliente HTTP para a Supabase Management API e Project REST API.
  */
 class SupabaseApiClient(
   private val okHttpClient: OkHttpClient = OkHttpClient.Builder()
-    .connectTimeout(25, TimeUnit.SECONDS)
-    .readTimeout(25, TimeUnit.SECONDS)
+    .connectTimeout(20, TimeUnit.SECONDS)
+    .readTimeout(20, TimeUnit.SECONDS)
     .build()
 ) {
   private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
 
   /**
-   * Executa uma query SQL arbitrária (DDL, DML, Migração) via Management API.
+   * Limpa o Project Reference para garantir que URLs completas como
+   * "https://abcdef.supabase.co" sejam convertidas apenas no ID "abcdef".
+   */
+  fun sanitizeProjectRef(raw: String): String {
+    var cleaned = raw.trim()
+    cleaned = cleaned.removePrefix("https://").removePrefix("http://")
+    if (cleaned.contains(".")) {
+      cleaned = cleaned.substringBefore(".")
+    }
+    return cleaned.trimEnd('/')
+  }
+
+  /**
+   * Executa uma query SQL arbitrária via Management API.
    * Endpoint: POST https://api.supabase.com/v1/projects/{ref}/database/query
    */
   suspend fun executeSqlQuery(
     config: SupabaseConfig,
     sql: String
   ): SupabaseMigrationResult = withContext(Dispatchers.IO) {
-    if (!config.isValid) {
+    val cleanRef = sanitizeProjectRef(config.projectRef)
+    val token = config.accessToken.trim()
+
+    if (cleanRef.isBlank() || token.isBlank()) {
       return@withContext SupabaseMigrationResult(
         success = false,
-        message = "Configuração do Supabase incompleta (Token ou Ref ausente)"
+        message = "Configuração do Supabase incompleta (Token ou Project Ref ausente)"
       )
     }
 
-    val url = "$BASE_URL/projects/${config.projectRef}/database/query"
+    val url = "$BASE_URL/projects/$cleanRef/database/query"
     val payload = JSONObject().apply {
       put("query", sql)
     }
 
     val request = Request.Builder()
       .url(url)
-      .addHeader("Authorization", "Bearer ${config.accessToken}")
+      .addHeader("Authorization", "Bearer $token")
       .addHeader("Content-Type", "application/json")
       .post(payload.toString().toRequestBody(jsonMediaType))
       .build()
@@ -86,11 +101,53 @@ class SupabaseApiClient(
   }
 
   /**
-   * Testa a conectividade com o projeto Supabase executando um 'SELECT 1;'.
+   * Testa a conectividade com o projeto Supabase.
+   * Suporta tanto Personal Access Tokens (Management API) quanto chaves do projeto (REST/Auth API).
    */
   suspend fun testConnection(config: SupabaseConfig): Boolean = withContext(Dispatchers.IO) {
-    val result = executeSqlQuery(config, "SELECT 1 as ping;")
-    result.success
+    val cleanRef = sanitizeProjectRef(config.projectRef)
+    val token = config.accessToken.trim()
+    if (cleanRef.isBlank() || token.isBlank()) return@withContext false
+
+    // 1. Tentar Management API se o token for Personal Access Token (sbp_...)
+    if (token.startsWith("sbp_")) {
+      val mgmtResult = executeSqlQuery(config.copy(projectRef = cleanRef, accessToken = token), "SELECT 1 as ping;")
+      if (mgmtResult.success) return@withContext true
+    }
+
+    // 2. Tentar Auth Health Endpoint do projeto (funciona com sb_secret, service_role, anon)
+    try {
+      val healthUrl = "https://$cleanRef.supabase.co/auth/v1/health"
+      val request = Request.Builder()
+        .url(healthUrl)
+        .addHeader("apikey", token)
+        .addHeader("Authorization", "Bearer $token")
+        .get()
+        .build()
+      val response = okHttpClient.newCall(request).execute()
+      if (response.isSuccessful || response.code == 200) {
+        return@withContext true
+      }
+    } catch (_: Exception) {}
+
+    // 3. Tentar REST Root Endpoint
+    try {
+      val restUrl = "https://$cleanRef.supabase.co/rest/v1/"
+      val request = Request.Builder()
+        .url(restUrl)
+        .addHeader("apikey", token)
+        .addHeader("Authorization", "Bearer $token")
+        .get()
+        .build()
+      val response = okHttpClient.newCall(request).execute()
+      if (response.isSuccessful || response.code in 200..299) {
+        return@withContext true
+      }
+    } catch (_: Exception) {}
+
+    // 4. Fallback final via Management API query
+    val fallback = executeSqlQuery(config.copy(projectRef = cleanRef, accessToken = token), "SELECT 1 as ping;")
+    fallback.success
   }
 
   private fun parseAffectedRows(responseBody: String): Int {

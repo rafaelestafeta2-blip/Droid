@@ -157,6 +157,21 @@ fun PreviewCanvasRenderer(
               Switch(checked = element.isChecked, onCheckedChange = {})
             }
           }
+          is PreviewElement.CalculatorWidget -> {
+            CalculatorWidgetRender()
+          }
+          is PreviewElement.CounterWidget -> {
+            CounterWidgetRender(element.initialCount)
+          }
+          is PreviewElement.TodoWidget -> {
+            TodoWidgetRender(element.tasks)
+          }
+          is PreviewElement.WeatherWidget -> {
+            WeatherWidgetRender(element.city, element.temp, element.condition)
+          }
+          is PreviewElement.ProfileWidget -> {
+            ProfileWidgetRender(element.name, element.bio)
+          }
           is PreviewElement.EmptyState -> {
             Text(element.message, color = Color.Gray, fontSize = 11.sp, textAlign = TextAlign.Center)
           }

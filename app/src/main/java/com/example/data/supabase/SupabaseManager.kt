@@ -25,11 +25,15 @@ class SupabaseManager(
     configStore.saveConfig(config)
   }
 
-  suspend fun testConnection(): Boolean = withContext(Dispatchers.IO) {
-    val cfg = getConfig()
+  suspend fun testConnection(customConfig: SupabaseConfig? = null): Boolean = withContext(Dispatchers.IO) {
+    val cfg = customConfig ?: getConfig()
     if (!cfg.isValid) return@withContext false
     val isOk = apiClient.testConnection(cfg)
-    configStore.setConnected(isOk)
+    if (customConfig != null) {
+      saveConfig(customConfig.copy(isConnected = isOk))
+    } else {
+      configStore.setConnected(isOk)
+    }
     isOk
   }
 

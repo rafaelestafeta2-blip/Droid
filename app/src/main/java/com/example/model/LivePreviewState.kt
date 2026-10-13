@@ -26,4 +26,9 @@ sealed class PreviewElement {
   data class ListItem(val title: String, val detail: String? = null) : PreviewElement()
   object DividerLine : PreviewElement()
   data class EmptyState(val message: String) : PreviewElement()
+  object CalculatorWidget : PreviewElement()
+  data class CounterWidget(val initialCount: Int = 0) : PreviewElement()
+  data class TodoWidget(val tasks: List<String> = listOf("Estudar Jetpack Compose", "Criar app com IA", "Publicar APK")) : PreviewElement()
+  data class WeatherWidget(val city: String = "São Paulo", val temp: String = "28°C", val condition: String = "Ensolarado") : PreviewElement()
+  data class ProfileWidget(val name: String = "Desenvolvedor Android", val bio: String = "Criando apps incríveis") : PreviewElement()
 }

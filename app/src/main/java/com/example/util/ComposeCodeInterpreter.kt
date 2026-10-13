@@ -23,6 +23,30 @@ object ComposeCodeInterpreter {
   }
 
   private fun parseComposeCode(code: String): List<PreviewElement> {
+    if (code.contains("CalculatorScreen")) {
+      return listOf(PreviewElement.ScreenHeader("Calculadora"), PreviewElement.CalculatorWidget)
+    }
+    if (code.contains("CounterScreen")) {
+      return listOf(PreviewElement.ScreenHeader("Contador Interativo"), PreviewElement.CounterWidget())
+    }
+    if (code.contains("TodoListScreen")) {
+      return listOf(PreviewElement.ScreenHeader("Minhas Tarefas"), PreviewElement.TodoWidget())
+    }
+    if (code.contains("WeatherScreen")) {
+      return listOf(PreviewElement.ScreenHeader("Previsão do Tempo"), PreviewElement.WeatherWidget())
+    }
+    if (code.contains("UserProfileScreen")) {
+      return listOf(PreviewElement.ScreenHeader("Perfil do Usuário"), PreviewElement.ProfileWidget())
+    }
+    if (code.contains("LoginScreen")) {
+      return listOf(
+        PreviewElement.ScreenHeader("Login", "Acesse sua conta"),
+        PreviewElement.InputField("E-mail"),
+        PreviewElement.InputField("Senha"),
+        PreviewElement.ActionButton("Entrar")
+      )
+    }
+
     val elements = mutableListOf<PreviewElement>()
 
     // Extrair Título ou TopAppBar

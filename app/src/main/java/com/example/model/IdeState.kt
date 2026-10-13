@@ -68,5 +68,7 @@ data class IdeUiState(
   val isAiChatVisible: Boolean = false,
   val selectedAiModel: String = "gemini-3.5-flash",
   val showCreateItemDialog: Boolean = false,
-  val activeParentPath: String = ""
+  val activeParentPath: String = "",
+  val chatMessages: List<ChatMessage> = emptyList(),
+  val showResetConfirmDialog: Boolean = false
 )

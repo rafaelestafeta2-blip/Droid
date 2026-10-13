@@ -14,6 +14,8 @@ import com.example.data.supabase.model.SupabaseConfig
 import com.example.data.supabase.model.SupabaseToolAction
 import com.example.data.supabase.model.SupabaseRlsDiagnostic
 import com.example.model.BuildStatus
+import com.example.model.ChatMessage
+import com.example.model.ChatSender
 import com.example.model.FileChangeAction
 import com.example.model.FileNode
 import com.example.model.IdeUiState
@@ -37,6 +39,9 @@ import com.example.model.IdeScreen
 import com.example.model.ProjectItem
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import com.example.data.agent.AutonomousAgentEngine
+import com.example.data.repository.GitHubConfigStore
+import com.example.data.repository.SavedGitHubConfig
 
 class IdeViewModel(application: Application) : AndroidViewModel(application) {
   private val fileManager = ProjectFileManager(application.applicationContext)
@@ -46,6 +51,8 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   private val rollbackManager = RollbackManager()
   private val gitHubImporter = GitHubImporter()
   private val supabaseManager = SupabaseManager(application.applicationContext)
+  private val agentEngine = AutonomousAgentEngine(fileManager, rollbackManager, geminiService)
+  private val gitHubConfigStore = GitHubConfigStore(application.applicationContext)
   private val _uiState = MutableStateFlow(
     IdeUiState(supabaseConfig = supabaseManager.getConfig())
   )
@@ -57,16 +64,26 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
     viewModelScope.launch {
       val tree = fileManager.loadProjectTree()
       val initialProject = fileManager.getWorkspaceProjectItem()
+      val mainActivity = FileTreeUtils.findFileByName(tree, "MainActivity.kt")
+      val savedGitHub = gitHubConfigStore.loadConfig()
       _uiState.update {
         it.copy(
           rootNode = tree,
-          activeFile = null,
-          editorContent = "",
-          openTabs = emptyList(),
-          projectsList = listOf(initialProject)
+          activeFile = mainActivity,
+          editorContent = mainActivity?.content ?: "",
+          openTabs = listOfNotNull(mainActivity),
+          projectsList = listOf(initialProject),
+          githubToken = savedGitHub.token,
+          githubOwner = savedGitHub.owner,
+          githubRepo = savedGitHub.repo,
+          githubWorkflowId = savedGitHub.workflowId,
+          currentBranch = savedGitHub.branch
         )
       }
       addLog("Sistema montado em context.filesDir/project_workspace", LogType.SUCCESS)
+      if (mainActivity != null && mainActivity.content.isNotBlank()) {
+        schedulePreviewParsing(mainActivity.name, mainActivity.content)
+      }
     }
   }
 
@@ -86,34 +103,146 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   fun requestAiPrompt(userPrompt: String) {
     val state = _uiState.value
     val fileName = state.activeFile?.name ?: "MainActivity.kt"
-    val globalIndex = ProjectIndexer.buildGlobalIndex(fileManager.workspaceDir)
-    _uiState.update { it.copy(isAiAnalyzing = true, showAiFixDialog = true) }
-    addLog("[INFO] Indexando projeto e enviando contexto global ao Gemini...", LogType.INFO)
+    val code = state.editorContent.ifBlank {
+      state.rootNode.let { FileTreeUtils.findFileByName(it, "MainActivity.kt")?.content } ?: ""
+    }
+
+    val userMsg = ChatMessage(sender = ChatSender.USER, text = userPrompt)
+    val agentMsgId = java.util.UUID.randomUUID().toString()
+    val initialMsg = ChatMessage(
+      id = agentMsgId,
+      sender = ChatSender.AGENT,
+      text = "Executando comando...",
+      isThinking = true
+    )
+
+    _uiState.update {
+      it.copy(
+        isAiAnalyzing = true,
+        isAiChatVisible = true,
+        showAiFixDialog = false,
+        chatMessages = it.chatMessages + userMsg + initialMsg
+      )
+    }
+    addLog("[AGENTE] Processando: '$userPrompt'...", LogType.INFO)
 
     viewModelScope.launch {
-      val suggestion = geminiService.generateFromCustomPrompt(fileName, state.editorContent, globalIndex, userPrompt)
-      _uiState.update { it.copy(currentAiFix = suggestion, isAiAnalyzing = false) }
-      addLog("[SUCCESS] Gemini AI: ${suggestion.changes.size} arquivo(s) planejados!", LogType.SUCCESS)
+      val result = agentEngine.executeCommand(
+        userPrompt = userPrompt,
+        activeFileName = fileName,
+        currentCode = code,
+        onStepUpdate = { updatedSteps ->
+          _uiState.update { current ->
+            val updated = current.chatMessages.map { msg ->
+              if (msg.id == agentMsgId) msg.copy(steps = updatedSteps) else msg
+            }
+            current.copy(chatMessages = updated)
+          }
+        }
+      )
+
+      val updatedTree = fileManager.loadProjectTree()
+      // Identificar arquivo criado (ex: CalculatorScreen.kt) e arquivo modificado (MainActivity.kt)
+      val createdChange = result.affectedFiles.firstOrNull { it.action == FileChangeAction.CREATE }
+      val modifiedChange = result.affectedFiles.firstOrNull { it.action == FileChangeAction.MODIFY }
+      val primaryChange = createdChange ?: modifiedChange
+
+      val targetNode = primaryChange?.let {
+        FileTreeUtils.findFileByName(updatedTree, it.filePath.substringAfterLast("/"))
+      } ?: _uiState.value.activeFile
+
+      val finalCode = targetNode?.content ?: primaryChange?.fullContent ?: _uiState.value.editorContent
+
+      // Abrir todos os arquivos afetados nas abas superiores
+      val affectedNodes = result.affectedFiles.mapNotNull { ch ->
+        FileTreeUtils.findFileByName(updatedTree, ch.filePath.substringAfterLast("/"))
+      }
+
+      val finishedAgentMsg = ChatMessage(
+        id = agentMsgId,
+        sender = ChatSender.AGENT,
+        text = result.message,
+        isThinking = false,
+        suggestedChanges = result.affectedFiles,
+        isApplied = true,
+        steps = result.steps
+      )
+
+      _uiState.update { current ->
+        val updatedMsgs = current.chatMessages.map { if (it.id == agentMsgId) finishedAgentMsg else it }
+        val newOpenTabs = (current.openTabs + affectedNodes).distinctBy { it.id }
+
+        current.copy(
+          rootNode = updatedTree,
+          activeFile = targetNode,
+          editorContent = finalCode,
+          openTabs = newOpenTabs,
+          isAiAnalyzing = false,
+          chatMessages = updatedMsgs,
+          canRollback = result.affectedFiles.isNotEmpty(),
+          hasSyntaxErrors = !result.success,
+          showAiFixDialog = false,
+          isAiChatVisible = false, // Fecha o modal de chat para revelar o editor e o Live Preview
+          previewState = current.previewState.copy(
+            isVisible = true,      // Exibe o Live Preview automaticamente ao concluir
+            isMinimized = false,  // Garante que o preview esteja expandido
+            previewTitle = targetNode?.name ?: "MainActivity.kt"
+          )
+        )
+      }
+
+      if (result.success) {
+        addLog("[SUCCESS] Agente: Alterações aplicadas com sucesso!", LogType.SUCCESS)
+      } else {
+        addLog("[WARNING] Agente: Verifique alertas de sintaxe.", LogType.WARNING)
+      }
+
+      if (targetNode != null) {
+        schedulePreviewParsing(targetNode.name, finalCode)
+      }
+    }
+  }
+
+  fun applyChatChanges(message: ChatMessage) {
+    if (message.suggestedChanges.isEmpty()) return
+    viewModelScope.launch(Dispatchers.IO) {
+      rollbackManager.createSnapshot(message.text, message.suggestedChanges.map { it.filePath }, fileManager)
+      message.suggestedChanges.forEach { change ->
+        fileManager.createOrUpdateFile(change.filePath, change.fullContent)
+      }
+      val tree = fileManager.loadProjectTree()
+      val firstChanged = message.suggestedChanges.firstOrNull()
+      val targetFile = firstChanged?.let { FileTreeUtils.findFileByName(tree, it.filePath.substringAfterLast("/")) }
+
+      _uiState.update { current ->
+        val updatedMsgs = current.chatMessages.map { if (it.id == message.id) it.copy(isApplied = true) else it }
+        current.copy(
+          rootNode = tree,
+          activeFile = targetFile ?: current.activeFile,
+          editorContent = targetFile?.content ?: firstChanged?.fullContent ?: current.editorContent,
+          openTabs = if (targetFile != null && !current.openTabs.any { it.id == targetFile.id }) current.openTabs + targetFile else current.openTabs,
+          chatMessages = updatedMsgs,
+          canRollback = true
+        )
+      }
+      addLog("[SUCCESS] Arquivos do Agente aplicados no projeto!", LogType.SUCCESS)
+      if (targetFile != null) {
+        schedulePreviewParsing(targetFile.name, targetFile.content)
+      }
     }
   }
 
   fun requestAiFix() {
-    val state = _uiState.value
-    val fileName = state.activeFile?.name ?: "MainActivity.kt"
-    val errorLogs = state.logs.filter { it.type == LogType.ERROR || it.type == LogType.WARNING }.joinToString("\n") { it.message }.ifEmpty { "e: Erro de compilação ou sintaxe" }
-    _uiState.update { it.copy(isAiAnalyzing = true, showAiFixDialog = true) }
-    addLog("[INFO] Solicitando diagnóstico e correção ao Gemini...", LogType.INFO)
-    viewModelScope.launch {
-      val suggestion = geminiService.analyzeAndFix(fileName, state.editorContent, errorLogs)
-      _uiState.update { it.copy(currentAiFix = suggestion, isAiAnalyzing = false) }
-      addLog("[SUCCESS] Gemini AI: Correção gerada!", LogType.SUCCESS)
-    }
+    val errorLogs = _uiState.value.logs.filter { it.type == LogType.ERROR || it.type == LogType.WARNING }
+      .joinToString("\n") { it.message }
+      .ifEmpty { "Erros de compilação ou sintaxe" }
+    requestAiPrompt("Corrija automaticamente as falhas e erros de compilação: $errorLogs")
   }
 
   fun requestFixSyntaxErrors() {
-    val state = _uiState.value
-    val syntaxErrors = state.logs.filter { it.message.contains("Erro de sintaxe", ignoreCase = true) || it.type == LogType.WARNING }.joinToString("\n") { it.message }
-    val prompt = "Corrija os erros de sintaxe e balanceamento de chaves/tags detectados no código: $syntaxErrors"
+    val syntaxErrors = _uiState.value.logs.filter { it.message.contains("Erro de sintaxe", ignoreCase = true) || it.type == LogType.WARNING }
+      .joinToString("\n") { it.message }
+    val prompt = "Corrija os erros de sintaxe e balanceamento detectados: $syntaxErrors"
     requestAiPrompt(prompt)
   }
 
@@ -185,9 +314,10 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
   }
 
   fun triggerGitHubDispatch(token: String, owner: String, repo: String, workflowId: String, branch: String) {
+    gitHubConfigStore.saveConfig(SavedGitHubConfig(token, owner, repo, workflowId, branch))
     viewModelScope.launch {
       _uiState.update { it.copy(githubToken = token, githubOwner = owner, githubRepo = repo, githubWorkflowId = workflowId, currentBranch = branch, isDispatchingGitHub = true, buildStatus = BuildStatus.BUILDING, selectedTab = TerminalTab.GITHUB_ACTIONS, isTerminalExpanded = true, showGitHubPushDialog = false) }
-      addLog("[INFO] Disparando build no GitHub Actions...", LogType.INFO)
+      addLog("[INFO] Disparando build no GitHub Actions ($owner/$repo)...", LogType.INFO)
       val result = gitHubRepository.triggerWorkflow(token, owner, repo, workflowId, branch)
       if (result is GitHubDispatchResult.Success) {
         addLog("[SUCCESS] ${result.message}", LogType.SUCCESS)
@@ -250,7 +380,7 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
         addLog("$ ./gradlew assembleDebug", LogType.COMMAND)
         delay(600)
         _uiState.update { it.copy(buildStatus = BuildStatus.SUCCESS, isApkReady = true) }
-        addLog("BUILD SUCCESSFUL: APK gerado localmente.", LogType.SUCCESS)
+        addLog("BUILD SUCCESSFUL: APK gerado e pronto para download.", LogType.SUCCESS)
       }
     }
   }
@@ -322,6 +452,19 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
     }
   }
 
+  fun openPreview() {
+    val currentFile = _uiState.value.activeFile
+    _uiState.update {
+      it.copy(
+        isAiChatVisible = false,
+        previewState = it.previewState.copy(isVisible = true, isMinimized = false)
+      )
+    }
+    if (currentFile != null) {
+      schedulePreviewParsing(currentFile.name, _uiState.value.editorContent)
+    }
+  }
+
   fun closeLivePreview() {
     _uiState.update { it.copy(previewState = it.previewState.copy(isVisible = false)) }
   }
@@ -332,7 +475,7 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
       delay(150)
       val elements = ComposeCodeInterpreter.parseCode(fileName, code)
       _uiState.update {
-        it.copy(previewState = it.previewState.copy(previewTitle = fileName, elements = elements))
+        it.copy(previewState = it.previewState.copy(isVisible = true, previewTitle = fileName, elements = elements))
       }
     }
   }
@@ -451,26 +594,39 @@ class IdeViewModel(application: Application) : AndroidViewModel(application) {
 
   fun saveSupabaseConfig(token: String, projectRef: String) {
     viewModelScope.launch(Dispatchers.IO) {
-      val config = SupabaseConfig(accessToken = token, projectRef = projectRef, isConnected = false)
+      val config = SupabaseConfig(accessToken = token.trim(), projectRef = projectRef.trim(), isConnected = false)
       supabaseManager.saveConfig(config)
+      val isOk = supabaseManager.testConnection(config)
       val loaded = supabaseManager.getConfig()
       _uiState.update { it.copy(supabaseConfig = loaded, showSupabaseDialog = false) }
-      addLog("[SUPABASE] Configuração salva para o projeto $projectRef", LogType.SUCCESS)
+      if (isOk) {
+        addLog("[SUPABASE SUCCESS] Configuração salva e conectada com sucesso!", LogType.SUCCESS)
+      } else {
+        addLog("[SUPABASE] Configuração salva para o projeto ${config.projectRef}", LogType.INFO)
+      }
     }
   }
 
-  fun testSupabaseConnection() {
+  fun testSupabaseConnection(token: String? = null, projectRef: String? = null) {
     viewModelScope.launch(Dispatchers.IO) {
-      addLog("[SUPABASE] Testando conexão com Supabase...", LogType.INFO)
-      val success = supabaseManager.testConnection()
+      val customCfg = if (!token.isNullOrBlank() && !projectRef.isNullOrBlank()) {
+        SupabaseConfig(accessToken = token.trim(), projectRef = projectRef.trim())
+      } else null
+      val refToLog = customCfg?.projectRef ?: _uiState.value.supabaseConfig.projectRef
+      addLog("[SUPABASE] Testando conexão com Supabase ($refToLog)...", LogType.INFO)
+      val success = supabaseManager.testConnection(customCfg)
       val config = supabaseManager.getConfig()
       _uiState.update { it.copy(supabaseConfig = config) }
       if (success) {
-        addLog("[SUPABASE] Conexão estabelecida com sucesso!", LogType.SUCCESS)
+        addLog("[SUPABASE SUCCESS] Conexão estabelecida com sucesso!", LogType.SUCCESS)
       } else {
         addLog("[SUPABASE ERROR] Falha na conexão. Verifique token e projectRef.", LogType.ERROR)
       }
     }
+  }
+
+  fun setShowResetConfirmDialog(show: Boolean) {
+    _uiState.update { it.copy(showResetConfirmDialog = show) }
   }
 
   fun executeSupabaseMigration(sql: String) {

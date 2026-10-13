@@ -7,15 +7,19 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.FolderShared
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -46,6 +50,7 @@ import com.example.ui.components.dialogs.AiFixDialog
 import com.example.ui.components.dialogs.CloneRepositoryDialog
 import com.example.ui.components.dialogs.GitHubPushDialog
 import com.example.ui.components.dialogs.CreateItemDialog
+import com.example.ui.components.dialogs.ResetTemplateConfirmDialog
 import com.example.ui.components.dialogs.SupabaseConfigDialog
 import com.example.ui.screens.projects.ProjectsScreen
 import com.example.ui.components.editor.BuildStatusBadge
@@ -59,6 +64,7 @@ import com.example.ui.components.terminal.TerminalPanel
 import com.example.ui.theme.IdeBackground
 import com.example.ui.theme.IdeCyan
 import com.example.ui.theme.IdeGreen
+import com.example.ui.theme.IdePurple
 import com.example.ui.theme.IdeRed
 import com.example.ui.theme.IdeSurface
 import com.example.ui.theme.IdeTextPrimary
@@ -110,7 +116,7 @@ fun IdeMainScreen(
             },
             onToggleFolder = { folderId -> viewModel.toggleFolder(folderId) },
             onResetTemplate = {
-              viewModel.resetProjectToTemplate()
+              viewModel.setShowResetConfirmDialog(true)
               scope.launch { drawerState.close() }
             },
             onCloneGitHub = {
@@ -127,6 +133,10 @@ fun IdeMainScreen(
             },
             onCreateNewItem = {
               viewModel.setShowCreateItemDialog(true)
+              scope.launch { drawerState.close() }
+            },
+            onOpenAiChat = {
+              viewModel.toggleAiChat()
               scope.launch { drawerState.close() }
             },
             selectedAiModel = uiState.selectedAiModel,
@@ -171,6 +181,19 @@ fun IdeMainScreen(
                   )
                 )
                 Spacer(modifier = Modifier.weight(1f))
+                FilledTonalButton(
+                  onClick = { viewModel.toggleAiChat() },
+                  colors = ButtonDefaults.filledTonalButtonColors(
+                    containerColor = IdePurple.copy(alpha = 0.25f),
+                    contentColor = IdePurple
+                  ),
+                  modifier = Modifier.height(32.dp).testTag("topbar_ai_assistant_button")
+                ) {
+                  Icon(Icons.Default.AutoAwesome, contentDescription = "Assistente IA (TA)", modifier = Modifier.size(14.dp))
+                  Spacer(modifier = Modifier.width(4.dp))
+                  Text("🤖 IA", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Spacer(modifier = Modifier.width(6.dp))
                 BuildStatusBadge(uiState.buildStatus)
               }
             },
@@ -205,6 +228,7 @@ fun IdeMainScreen(
           onCloseTab = { viewModel.closeTab(it) },
           onRunBuild = { viewModel.runBuild() },
           onTogglePreview = { viewModel.toggleLivePreview() },
+          onToggleAiChat = { viewModel.toggleAiChat() },
           onGitHubPush = { viewModel.showGitHubDialog(true) },
           viewModel = viewModel
         )
@@ -229,15 +253,15 @@ fun IdeMainScreen(
 
           // AI Chat Panel Overlay
           if (uiState.isAiChatVisible) {
-            Box(
-                modifier = Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.4f)),
-                contentAlignment = Alignment.Center
-            ) {
-                AiChatPanel(
-                    onClose = { viewModel.toggleAiChat() },
-                    onSendPrompt = { prompt -> viewModel.requestAiPrompt(prompt) }
-                )
-            }
+            AiChatPanel(
+              messages = uiState.chatMessages,
+              isAnalyzing = uiState.isAiAnalyzing,
+              selectedModel = uiState.selectedAiModel,
+              onClose = { viewModel.toggleAiChat() },
+              onSendPrompt = { prompt -> viewModel.requestAiPrompt(prompt) },
+              onOpenPreview = { viewModel.openPreview() },
+              onRollback = { viewModel.rollbackLastAiChange() }
+            )
           }
         }
 
@@ -294,6 +318,7 @@ fun IdeMainScreen(
       onTriggerDispatch = { token, owner, repo, workflowId, branch ->
         viewModel.triggerGitHubDispatch(token, owner, repo, workflowId, branch)
       },
+      onRunLocalBuild = { viewModel.runBuild() },
       onDismiss = { viewModel.showGitHubDialog(false) }
     )
   }
@@ -323,8 +348,15 @@ fun IdeMainScreen(
     SupabaseConfigDialog(
       initialConfig = uiState.supabaseConfig,
       onSaveConfig = { token, ref -> viewModel.saveSupabaseConfig(token, ref) },
-      onTestConnection = { _, _ -> viewModel.testSupabaseConnection() },
+      onTestConnection = { token, ref -> viewModel.testSupabaseConnection(token, ref) },
       onDismiss = { viewModel.showSupabaseDialog(false) }
+    )
+  }
+
+  if (uiState.showResetConfirmDialog) {
+    ResetTemplateConfirmDialog(
+      onConfirm = { viewModel.resetProjectToTemplate() },
+      onDismiss = { viewModel.setShowResetConfirmDialog(false) }
     )
   }
 }
